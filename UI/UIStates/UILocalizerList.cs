@@ -1,4 +1,5 @@
 ﻿#nullable enable
+using Localizer.DataModel;
 using Localizer.UI.UIElements;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -9,6 +10,10 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Terraria;
 using Terraria.GameContent.UI.Elements;
 using Terraria.ModLoader;
@@ -106,18 +111,69 @@ public class UILocalizerList : UIState
                 DownloadLocalizer(localizertext);
             }
 
-
             if (localizertext.LocalPath != null) {
                 EnableOrDisableLocalizer(localizertext);
             }
         }
     }
 
-    private void DownloadLocalizer(UILocalizerText localizertext)
+    private Dictionary<UILocalizerText, CancellationTokenSource> downloadCTS = [];
+
+    private async void DownloadLocalizer(UILocalizerText localizertext)
     {
-        if (localizertext.NetPath == null) 
+        if (localizertext.NetPath == null)
             return;
 
+        if(downloadCTS.TryGetValue(localizertext, out var cts)) {
+            cts.Cancel();
+            downloadCTS[localizertext] = new CancellationTokenSource();
+        } else {
+            downloadCTS[localizertext] = new CancellationTokenSource();
+        }
+
+        var APIUrl = string.Join("/", GetResourceAPI, localizertext.Mod.Name, localizertext.NetPath);
+
+        List<FileContent>? urls;
+        try {
+            DownloadWebClient.DefaultRequestHeaders.Add("User-Agent", "tModLoader_Mod_Localizer");/*.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue(""));*/
+            string reqC = await (await DownloadWebClient.GetAsync(APIUrl))
+                        .Content
+                        .ReadAsStringAsync();
+
+            urls = JsonSerializer.Deserialize<List<FileContent>>(reqC);
+        } catch (Exception e) {
+            Log.Error("资源请求超时, 或Json解析失败! " + e.Message + e.StackTrace);
+            return;
+        }
+
+        List<Task> downloadTasks = [];
+        if(!(urls == null)) {
+            var downloadUrls = urls.Where(fc => "file".Equals(fc.Type))
+                .Select(fc => new { url = fc.DownloadUrl, name = fc.Name })
+                .ToList();
+
+            foreach (var urlAname in downloadUrls) {
+                var dPath = Path.Combine(ResPath, localizertext.Mod.Name, localizertext.NetPath, urlAname.name!);
+                downloadTasks.Add(DownloadFile(urlAname.url, dPath));
+            }
+        }
+
+        try {
+            await Task.WhenAll(downloadTasks).WaitAsync(downloadCTS[localizertext].Token);
+        } catch (Exception) {
+            return;
+        } finally {
+            Main.QueueMainThreadAction(() => {
+                foreach (var item in Mods) {
+                    if (item is UIModText uit) {
+                        if (uit.Mod == localizertext.Mod) {
+                            OpenModLocalizer(uit);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
         //localizertext
     }
 
@@ -158,27 +214,36 @@ public class UILocalizerList : UIState
     private void OpenModLocalizerList(UIMouseEvent evt, UIElement listeningElement)
     {
         if(evt.Target is UIModText modText) {
-            LocalizerFileList.Clear();
-            var modResPath = Path.Combine(ResPath, modText.Mod.Name);
-            var files = Directory.GetDirectories(modResPath);
-            foreach (var localizerFile in files) {
-                var ltextUI = CreateLocalizerTextUI(GetDirectoryName(localizerFile), modText.Mod);
-                ltextUI.LocalPath = localizerFile;
-                var isEnable = LoadPath.Any(f => f.Value == ltextUI.LocalPath);
-                if (isEnable) {
-                    ltextUI.SetText("(开启)" + GetDirectoryName(ltextUI.LocalPath));
-                }
-                LocalizerFileList.Add(ltextUI);
-            }
+            OpenModLocalizer(modText);
+        }
+    }
 
-            var netPath = ReadRouteText();
-            foreach (var route in netPath) {
-                if (route.ModName == modText.Mod.Name && !NameExists(route.DirectoryName)) {
-                    var localizerNet = CreateLocalizerTextUI(("未下载") + route.DirectoryName, modText.Mod);
-                    localizerNet.NetPath = route.DirectoryName;
-                    localizerNet.LocalPath = null;
-                    LocalizerFileList.Add(localizerNet);
-                }
+    private void OpenModLocalizer(UIModText modText)
+    {
+        LocalizerFileList.Clear();
+        var modResPath = Path.Combine(ResPath, modText.Mod.Name);
+        if (!Directory.Exists(modResPath)) {
+            Directory.CreateDirectory(modResPath);
+        }
+
+        var files = Directory.GetDirectories(modResPath);
+        foreach (var localizerFile in files) {
+            var ltextUI = CreateLocalizerTextUI(GetDirectoryName(localizerFile), modText.Mod);
+            ltextUI.LocalPath = localizerFile;
+            var isEnable = LoadPath.Any(f => f.Value == ltextUI.LocalPath);
+            if (isEnable) {
+                ltextUI.SetText("(开启)" + GetDirectoryName(ltextUI.LocalPath));
+            }
+            LocalizerFileList.Add(ltextUI);
+        }
+
+        var netPath = ReadRouteText();
+        foreach (var route in netPath) {
+            if (route.ModName == modText.Mod.Name && !NameExists(route.DirectoryName)) {
+                var localizerNet = CreateLocalizerTextUI(("未下载") + route.DirectoryName, modText.Mod);
+                localizerNet.NetPath = route.DirectoryName;
+                localizerNet.LocalPath = null;
+                LocalizerFileList.Add(localizerNet);
             }
         }
     }
@@ -284,8 +349,11 @@ public class LocalizerUIMods : GlobalUIModItem
         }
 
         LocalizerListUI.Mods.Clear();
+
+        var routeMods = JsonSerializer.Deserialize<List<RouteModel>>(File.ReadAllText(RoutePath)) ?? [];
+        var localizermods = routeMods.Select(rm => rm.ModName).Union(resDirectorys);
         foreach (var item in ModLoader.Mods) {
-            if (resDirectorys.Contains(item.Name) /*&& !isTrue*/)
+            if (localizermods.Any(f => f.Equals(item.Name)) /*&& !isTrue*/)
                 LocalizerListUI.Mods.Add(CreateUITextUI(item.Name, item, 1));
         }
         IsDraw = !IsDraw;

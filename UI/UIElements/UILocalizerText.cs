@@ -13,6 +13,10 @@ public class UILocalizerText : UIMyText
 
     public required Mod Mod { get; set; }
     public string? LocalPath { get; set; }
+
+    /// <summary>
+    /// 此资源的名称
+    /// </summary>
     public string? NetPath { get; set; }
     public UILocalizerText(string text, float textScale = 1, bool large = false) : base(text, textScale, large)
     {
