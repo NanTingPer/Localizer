@@ -1,0 +1,6 @@
+Items: {
+	TestItem: {
+		DisplayName: Test Item
+		Tooltip: ""
+	}
+}

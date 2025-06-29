@@ -1,0 +1,3 @@
+displayName = Localizer
+author = l
+version = 0.1
