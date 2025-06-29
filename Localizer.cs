@@ -18,6 +18,12 @@ public class Localizer : Mod
     public readonly static string SplitString = "###Localizer###";
     public readonly static HttpClient DownloadWebClient = new ();
 
+    public override void Load()
+    {
+
+        base.Load();
+    }
+
     public static List<RouteModel> ReadRouteText()
     {
         if (!File.Exists(RoutePath)) {

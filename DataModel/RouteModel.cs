@@ -13,9 +13,4 @@ public class RouteModel
     /// 目标文件名称 (汉化集合的名称)
     /// </summary>
     public string DirectoryName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 此汉化集合的全部文件
-    /// </summary>
-    public List<string> FileNames { get; set; } = [];
 }
