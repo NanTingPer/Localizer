@@ -148,7 +148,6 @@ public class Localizer : Mod
 
         //using var rns = hrm.Content.ReadAsStream();
         string fileText = await hrm.Content.ReadAsStringAsync(ct);
-        await Task.Delay(2000);
         using var fs = new FileStream(filePath, FileMode.Create);
         await fs.WriteAsync(Encoding.UTF8.GetBytes(fileText), ct);
         fs.Flush();
