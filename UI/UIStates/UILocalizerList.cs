@@ -130,17 +130,21 @@ public class UILocalizerList : UIState
         } else {
             downloadCTS[localizertext] = new CancellationTokenSource();
         }
+        cts?.Dispose();
+
+        var thisCToken = downloadCTS[localizertext].Token;
 
         var APIUrl = string.Join("/", GetResourceAPI, localizertext.Mod.Name, localizertext.NetPath);
 
         List<FileContent>? urls;
         try {
-            DownloadWebClient.DefaultRequestHeaders.Add("User-Agent", "tModLoader_Mod_Localizer");/*.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue(""));*/
-            string reqC = await (await DownloadWebClient.GetAsync(APIUrl))
+            /*.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue(""));*/
+            string reqC = await (await DownloadWebClient.GetAsync(APIUrl, thisCToken))
                         .Content
-                        .ReadAsStringAsync();
-
-            urls = JsonSerializer.Deserialize<List<FileContent>>(reqC);
+                        .ReadAsStringAsync(thisCToken);
+            if (reqC == null)
+                return;
+            urls = JsonSerializer.Deserialize<List<FileContent>>(reqC) ?? [];
         } catch (Exception e) {
             Log.Error("资源请求超时, 或Json解析失败! " + e.Message + e.StackTrace);
             return;
@@ -154,12 +158,12 @@ public class UILocalizerList : UIState
 
             foreach (var urlAname in downloadUrls) {
                 var dPath = Path.Combine(ResPath, localizertext.Mod.Name, localizertext.NetPath, urlAname.name!);
-                downloadTasks.Add(DownloadFile(urlAname.url, dPath));
+                downloadTasks.Add(DownloadFile(urlAname.url, dPath, thisCToken));
             }
         }
 
         try {
-            await Task.WhenAll(downloadTasks).WaitAsync(downloadCTS[localizertext].Token);
+            await Task.WhenAll(downloadTasks).WaitAsync(thisCToken);
         } catch (Exception) {
             return;
         } finally {

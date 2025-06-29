@@ -7,9 +7,10 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Net.Http;
 using System.Threading.Tasks;
-using log4net.Core;
 using log4net;
 using System.Text;
+using System.Threading;
+using System.Linq;
 
 namespace Localizer;
 
@@ -18,49 +19,140 @@ public class Localizer : Mod
 {
     public static ILog Log { get => ModLoader.GetMod(nameof(Localizer)).Logger; }
     public const string RouteNetPath = "https://raw.githubusercontent.com/NanTingPer/Localizer/refs/heads/main/LocalizationResource/Route.json";
-    public readonly static string ResPath = Path.Combine(Environment.CurrentDirectory, nameof(Localizer));
+    public const string ResourceAPI = "https://api.github.com/repos/NanTingPer/Localizer/contents/LocalizationResource";
+    private static string? resPath;
+    public static string ResPath
+    {
+        get
+        {
+            if(resPath == null) {
+                resPath = Path.Combine(Environment.CurrentDirectory, nameof(Localizer));
+                if (!Directory.Exists(resPath)) {
+                    Directory.CreateDirectory(resPath);
+                }
+            }
+            return resPath;
+        }
+    }
     public readonly static string RoutePath = Path.Combine(ResPath, "Route.json");
     public static string LoadFilesPath { get => Path.Combine(ResPath, "LoadFiles.conf"); }
     public readonly static string SplitString = "###Localizer###";
-    public readonly static HttpClient DownloadWebClient = new ();
+
+    private static HttpClient downloadWebClient;
+    public static HttpClient DownloadWebClient
+    {
+        get
+        {
+            if (downloadWebClient == null) {
+                downloadWebClient = new HttpClient();
+                downloadWebClient.DefaultRequestHeaders.Add("User-Agent", "tModLoader_Mod_Localizer");
+            }
+            return downloadWebClient;
+        }
+    }
+
     public const string GetResourceAPI = "https://api.github.com/repos/NanTingPer/Localizer/contents/LocalizationResource";
 
     public override void Load()
     {
-        if (!File.Exists(RoutePath)) {
-            _ = DownloadFile(RouteNetPath, RoutePath);
-        }
+        BuildRouteFile();
         base.Load();
     }
 
-    public static async Task DownloadFile(string url, string filePath)
+    private static List<RouteModel> localizerRoutes = [];
+    private static object lockObj = new();
+
+    private static async void BuildRouteFile()
+    {
+        List<Task> lt = [];
+        var fileList = await APIRequest(ResourceAPI);
+        var mods = fileList
+            .Where(fc => "dir".Equals(fc.Type))
+            .ToHashSet()
+            .ToList();
+
+        foreach (var fileContent in mods) {
+            lt.Add(BuildRouteModel(fileContent));
+        }
+        await Task.WhenAll(lt);
+
+        if(localizerRoutes.Count > 0) {
+            var jsonText = JsonSerializer.Serialize(localizerRoutes);
+            File.WriteAllText(RoutePath, jsonText);
+        }
+    }
+
+    private static async Task BuildRouteModel(FileContent modFileContent)
+    {
+        var rms = new List<RouteModel>();
+        var newAPI = string.Join("/", ResourceAPI, modFileContent.Name); //Name => Êñá‰ª∂Â§πÂêçÁß∞ÂÖºÊ®°ÁªÑÂêçÁß∞
+        var localizerList = await APIRequest(newAPI);
+        localizerList = localizerList.Where(f => "dir".Equals(f.Type)).ToList();
+
+        foreach (var localizer in localizerList) {
+            rms.Add(new RouteModel()
+            {
+                DirectoryName = localizer.Name,
+                ModName = modFileContent.Name
+            });
+        }
+        LocalizerRoutesAdd([.. rms]);
+    }
+
+    private static void LocalizerRoutesAdd(params RouteModel[] routes)
+    {
+        lock (lockObj) {
+            localizerRoutes.AddRange(routes);
+        }
+    }
+
+    private static async Task<List<FileContent>> APIRequest(string apiUri)
+    {
+        var hrm = await DownloadWebClient.GetAsync(apiUri);
+        if (hrm.StatusCode != System.Net.HttpStatusCode.OK) {
+            Log.Error("APIËØ∑Ê±ÇÂ§±Ë¥•ÔºåGithubËØ∑Ê±ÇÂ§±Ë¥•ÔºÅ" + apiUri);
+            return [];
+        }
+        var jsonText = await hrm.Content.ReadAsStringAsync();
+
+        List<FileContent> fileList;
+        try {
+            fileList = JsonSerializer.Deserialize<List<FileContent>>(jsonText) ?? [];
+        } catch (Exception e) {
+            Log.Error("ÊûÑÂª∫Ë∑ØÁî±Êñá‰ª∂Â§±Ë¥•ÔºåJsonËß£ÊûêÂ§±Ë¥•ÔºÅ" + apiUri, e);
+            return [];
+        }
+        return fileList ?? [];
+    }
+
+
+    public static async Task DownloadFile(string url, string filePath, CancellationToken ct = default)
     {
         HttpResponseMessage hrm;
         try {
-            hrm = await DownloadWebClient.GetAsync(url);
+            hrm = await DownloadWebClient.GetAsync(url, ct);
             if (hrm.StatusCode != System.Net.HttpStatusCode.OK) {
-                Log.Error("Œƒº˛«Î«Û ß∞‹£°" + url + " ====> " + filePath);
+                Log.Error("Êñá‰ª∂ËØ∑Ê±ÇÂ§±Ë¥•ÔºÅ" + url + " ====> " + filePath);
                 return;
             }
         } catch (Exception ex) {
-            Log.Error("ø…ƒ‹ ««Î«Û≥¨ ±¡À : " + url + " ====> " + filePath + ex.Message + "\n" + ex.StackTrace);
+            Log.Error("ÂèØËÉΩÊòØËØ∑Ê±ÇË∂ÖÊó∂‰∫Ü : " + url + " ====> " + filePath + ex.Message + "\n" + ex.StackTrace);
             return;
         }
 
-        //≈–∂œŒƒº˛º– «∑Ò¥Ê‘⁄
+        //Âà§Êñ≠Êñá‰ª∂Â§πÊòØÂê¶Â≠òÂú®
         var directory = Path.GetDirectoryName(filePath);
         if (!Directory.Exists(directory)) {
             Directory.CreateDirectory(directory);
         }
 
         //using var rns = hrm.Content.ReadAsStream();
-        string fileText = await hrm.Content.ReadAsStringAsync();
-
-        using var fs = new FileStream(filePath, FileMode.Create);
+        string fileText = await hrm.Content.ReadAsStringAsync(ct);
         await Task.Delay(2000);
-        fs.Write(Encoding.UTF8.GetBytes(fileText));
+        using var fs = new FileStream(filePath, FileMode.Create);
+        await fs.WriteAsync(Encoding.UTF8.GetBytes(fileText), ct);
         fs.Flush();
-
+        hrm.Dispose();
 
         //var buffer = new byte[1024];
         //var readLength = 0;
@@ -75,7 +167,7 @@ public class Localizer : Mod
     public static List<RouteModel> ReadRouteText()
     {
         if (!File.Exists(RoutePath)) {
-            //TODO ¥”Õ¯¬Áœ¬‘ÿ
+            //TODO ‰ªéÁΩëÁªú‰∏ãËΩΩ
             File.Create(RoutePath).Dispose();
         }
         try {
