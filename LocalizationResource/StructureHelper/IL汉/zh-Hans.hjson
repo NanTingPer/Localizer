@@ -1,0 +1,55 @@
+Mods: {
+	StructureHelper: {
+		Items: {
+			ChestWand: {
+				DisplayName: 宝箱魔杖
+				Tooltip:
+					'''
+					右键打开箱子规则菜单
+      				左键一个箱子以设置它的规则为当前规则
+      				右键带有规则的箱子可以复制规则
+					'''
+			}
+
+			MultistructureWand: {
+				DisplayName: 多建筑魔杖
+				Tooltip: 在世界中选择 2 个点。右键确认后，背包右键本物品保存。
+			}
+
+			StructureWand: {
+				DisplayName: 建筑魔杖
+				Tooltip: 在世界中选择 2 个点，然后右键保存
+			}
+
+			TestWand: {
+				DisplayName: 建筑放置魔杖
+				Tooltip: 左键放置选择的建筑，右键打开建筑选择器
+			}
+
+			NullBlockItem: {
+				DisplayName: 空块
+				Tooltip:
+					'''
+      				在建筑中使用这些来指示生成器的位置
+      				请不要修改世界上任何已经存在的东西
+      				墙壁会被忽略并替换为空墙 ：3
+					'''
+			}
+
+			NullTileAndWallPlacer: {
+				DisplayName: Null Tile Place-O-Matic
+				Tooltip: 同时放置空块和空墙!
+			}
+
+			NullWallItem: {
+				DisplayName: 空墙
+				Tooltip:
+					'''
+      				在建筑使用这些来指示生成器的位置
+      				应保持世界中已存在的墙壁不变
+      				只对墙有效，其他的物块会变为空块。
+					'''
+			}
+		}
+	}
+}
